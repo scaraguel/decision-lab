@@ -1,6 +1,6 @@
 import { tool } from "@opencode-ai/plugin"
 import { readFileSync, mkdirSync, writeFileSync, existsSync, appendFileSync, readdirSync, copyFileSync, cpSync, statSync } from "fs"
-import { parse as parseYaml } from "yaml"
+import yaml from "yaml"
 import { join, basename } from "path"
 
 // Helper: Copy directory contents excluding certain paths
@@ -24,7 +24,7 @@ function parseAgentFrontmatter(agentPath: string): Record<string, any> {
   const content = readFileSync(agentPath, "utf-8")
   const match = content.match(/^---\n([\s\S]*?)\n---/)
   if (!match) return {}
-  return parseYaml(match[1])
+  return yaml.parse(match[1])
 }
 
 // Helper: Build permission config from agent frontmatter tools
@@ -192,7 +192,7 @@ export default tool({
     if (!existsSync(configPath)) {
       throw new Error(`No parallel config found: ${configPath}`)
     }
-    const config = parseYaml(readFileSync(configPath, "utf-8"))
+    const config = yaml.parse(readFileSync(configPath, "utf-8"))
 
     // Validate instance count
     const numInstances = args.prompts.length

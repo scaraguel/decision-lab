@@ -2,9 +2,17 @@
 Tests for dlab.parallel_tool module.
 """
 
+import re
 from pathlib import Path
 
 from dlab.parallel_tool import PARALLEL_AGENTS_SOURCE
+
+# Node built-in modules and OpenCode packages are safe for ESM named imports
+_ALLOWED_ESM_NAMED_IMPORTS: set[str] = {
+    "fs", "path", "os", "util", "url", "child_process", "crypto",
+    "stream", "events", "http", "https", "net", "assert",
+    "@opencode-ai/plugin",
+}
 
 
 class TestParallelAgentsSource:
@@ -30,3 +38,20 @@ class TestParallelAgentsSource:
         source_file: Path = Path(__file__).parent.parent / "dlab" / "js" / "parallel-agents.ts"
         expected: str = source_file.read_text()
         assert PARALLEL_AGENTS_SOURCE == expected
+
+    def test_no_esm_named_imports_from_third_party(self) -> None:
+        """Third-party packages must use default imports to avoid CJS/ESM issues.
+
+        ESM named imports (import { x } from "pkg") break when the package
+        is CommonJS. Node built-ins and @opencode-ai/* are safe.
+        """
+        pattern: re.Pattern[str] = re.compile(
+            r'import\s*\{[^}]+\}\s*from\s*["\']([^"\']+)["\']'
+        )
+        for match in pattern.finditer(PARALLEL_AGENTS_SOURCE):
+            pkg: str = match.group(1)
+            assert pkg in _ALLOWED_ESM_NAMED_IMPORTS, (
+                f"ESM named import from third-party package '{pkg}' — "
+                f"use default import instead (import pkg from \"{pkg}\") "
+                f"to avoid CJS/ESM interop issues"
+            )

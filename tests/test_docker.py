@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from dlab.docker import (
+    _run_docker_build,
     build_image,
     build_runner_script,
     compute_docker_dir_hash,
@@ -102,6 +103,18 @@ class TestBuildImage:
 
         with pytest.raises(ValueError, match="Docker build failed"):
             build_image(str(tmp_path), "test-image")
+
+    def test_build_error_includes_output(self, tmp_path: Path) -> None:
+        """Build failures should include diagnostic output, not an empty string."""
+        docker_path: Path = tmp_path / "docker"
+        docker_path.mkdir()
+        (docker_path / "Dockerfile").write_text("FROM nonexistent-image-xxxxx\n")
+
+        returncode, output = _run_docker_build(
+            ["docker", "build", str(docker_path)],
+        )
+        assert returncode != 0
+        assert len(output) > 0, "Build error output should not be empty"
 
 
 class TestContainerExists:

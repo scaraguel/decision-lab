@@ -243,13 +243,14 @@ def _run_docker_build(
         stderr=subprocess.STDOUT,
         text=True,
     )
-    stderr_lines: list[str] = []
+    output_lines: list[str] = []
     for line in proc.stdout:  # type: ignore[union-attr]
         line = line.rstrip("\n")
+        output_lines.append(line)
         if on_output:
             on_output(line)
     proc.wait()
-    return proc.returncode, "\n".join(stderr_lines)
+    return proc.returncode, "\n".join(output_lines)
 
 
 def build_image(
