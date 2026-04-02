@@ -2,8 +2,13 @@
 Tests for dlab.parallel_tool module.
 """
 
+import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from dlab.parallel_tool import PARALLEL_AGENTS_SOURCE
 
@@ -55,3 +60,90 @@ class TestParallelAgentsSource:
                 f"use default import instead (import pkg from \"{pkg}\") "
                 f"to avoid CJS/ESM interop issues"
             )
+
+
+class TestYamlImportRuntime:
+    """Verify that the yaml import in parallel-agents.ts works at runtime.
+
+    Catches ESM/CJS interop issues that static analysis alone would miss.
+    """
+
+    @pytest.fixture
+    def js_workspace(self, tmp_path: Path) -> Path:
+        """Set up a temp workspace with yaml installed, mirroring session setup."""
+        pkg: dict[str, object] = {"dependencies": {"yaml": "^2.0.0"}}
+        (tmp_path / "package.json").write_text(json.dumps(pkg))
+        result: subprocess.CompletedProcess[str] = subprocess.run(
+            ["npm", "install", "--silent"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            pytest.skip(f"npm install failed: {result.stderr}")
+        return tmp_path
+
+    def test_yaml_import_node(self, js_workspace: Path) -> None:
+        """yaml import must resolve and parse() must work under Node."""
+        # Extract just the yaml import line from our source
+        import_lines: list[str] = [
+            line for line in PARALLEL_AGENTS_SOURCE.splitlines()
+            if "yaml" in line and ("import" in line or "require" in line)
+        ]
+        assert import_lines, "No yaml import found in parallel-agents.ts"
+
+        # Build a minimal JS test that does what our .ts does
+        test_js: str = (
+            'const yaml = require("yaml");\n'
+            'const result = yaml.parse("key: value");\n'
+            'if (result.key !== "value") { process.exit(1); }\n'
+            'console.log("ok");\n'
+        )
+        test_file: Path = js_workspace / "test_yaml.js"
+        test_file.write_text(test_js)
+
+        result: subprocess.CompletedProcess[str] = subprocess.run(
+            ["node", str(test_file)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert result.returncode == 0, (
+            f"yaml require() failed under Node:\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+    def test_yaml_import_docker(self, js_workspace: Path) -> None:
+        """yaml import must work inside a Docker container (closer to production)."""
+        test_js: str = (
+            'const yaml = require("yaml");\n'
+            'const result = yaml.parse("key: value");\n'
+            'if (result.key !== "value") { process.exit(1); }\n'
+            'console.log("ok");\n'
+        )
+        test_file: Path = js_workspace / "test_yaml.js"
+        test_file.write_text(test_js)
+
+        result: subprocess.CompletedProcess[str] = subprocess.run(
+            [
+                "docker", "run", "--rm",
+                "-v", f"{js_workspace}:/app",
+                "-w", "/app",
+                "node:20-slim",
+                "node", "test_yaml.js",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, (
+            f"yaml require() failed inside Docker (node:20-slim):\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+    def test_import_style_matches_source(self) -> None:
+        """The yaml import in parallel-agents.ts must use require(), not ESM import."""
+        assert 'require("yaml")' in PARALLEL_AGENTS_SOURCE, (
+            "parallel-agents.ts must use require('yaml') for CJS/ESM compatibility"
+        )

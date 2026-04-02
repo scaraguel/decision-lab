@@ -49,6 +49,15 @@ def _has_api_key() -> bool:
     return "ANTHROPIC_API_KEY=" in content
 
 
+def _has_google_key() -> bool:
+    """Check if .env file exists and contains a Google AI API key."""
+    env_path: Path = Path(ENV_FILE)
+    if not env_path.exists():
+        return False
+    content: str = env_path.read_text()
+    return "GOOGLE_GENERATIVE_AI_API_KEY=" in content
+
+
 def _remove_image(name: str) -> None:
     """Remove a Docker image, ignoring errors if it doesn't exist."""
     subprocess.run(["docker", "rmi", "-f", name], capture_output=True)
@@ -386,3 +395,70 @@ class TestEndToEnd:
         assert (work_dir / "final_poem.md").exists()
         poem_content: str = (work_dir / "final_poem.md").read_text()
         assert len(poem_content.strip()) > 0
+
+
+# ---------------------------------------------------------------------------
+# TestOpenCodeLatest
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not _has_google_key(), reason="No GOOGLE_GENERATIVE_AI_API_KEY in .env")
+class TestOpenCodeLatest:
+    """
+    End-to-end test with opencode latest (no pinned version).
+
+    Uses the poem decision-pack with google/gemini-2.5-flash to verify
+    that parallel-agents.ts works with the latest opencode release.
+    This catches ESM/CJS interop regressions (issue #17).
+
+    Requires GOOGLE_GENERATIVE_AI_API_KEY in the .env file at repo root.
+    """
+
+    LATEST_IMAGE_NAME: str = "dlab-opencode-latest-test"
+
+    @pytest.fixture(scope="class")
+    def latest_dpack_dir(self, tmp_path_factory: pytest.TempPathFactory) -> Path:
+        """Copy poem dpack with opencode_version removed (forces latest)."""
+        base: Path = tmp_path_factory.mktemp("latest_dpack")
+        dpack_copy: Path = base / "poem"
+        shutil.copytree(POEM_DPACK_DIR, str(dpack_copy))
+
+        config_path: Path = dpack_copy / "config.yaml"
+        config_data: dict[str, Any] = yaml.safe_load(config_path.read_text())
+        config_data.pop("opencode_version", None)
+        config_data["docker_image_name"] = self.LATEST_IMAGE_NAME
+        config_path.write_text(yaml.dump(config_data))
+
+        return dpack_copy
+
+    @pytest.fixture(scope="class", autouse=True)
+    def cleanup_image(self) -> Generator[None, None, None]:
+        yield
+        _remove_image(self.LATEST_IMAGE_NAME)
+        _remove_image(f"{self.LATEST_IMAGE_NAME}-base")
+
+    def test_poem_with_opencode_latest(
+        self, latest_dpack_dir: Path, tmp_path: Path,
+    ) -> None:
+        """Full poem run with opencode latest — catches yaml import issues."""
+        work_dir: Path = tmp_path / "latest-test"
+
+        parser: argparse.ArgumentParser = create_parser()
+        args: argparse.Namespace = parser.parse_args([
+            "--dpack", str(latest_dpack_dir),
+            "--prompt", "Write a haiku about the sea.",
+            "--work-dir", str(work_dir),
+            "--env-file", ENV_FILE,
+        ])
+
+        exit_code: int = cmd_run(args)
+
+        assert exit_code == 0, (
+            f"Poem run with opencode latest failed (exit {exit_code}). "
+            f"Check {work_dir / '_opencode_logs'} for details."
+        )
+
+        # Agent ran and produced a log
+        main_log: Path = work_dir / "_opencode_logs" / "main.log"
+        assert main_log.exists()
+        assert main_log.stat().st_size > 0

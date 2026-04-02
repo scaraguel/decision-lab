@@ -41,7 +41,7 @@ failure_behavior: continue
 
 # LLM model for all instances. To use a different model per instance, remove
 # this and use instance_models instead (see below).
-default_model: "google/gemini-2.0-flash"
+default_model: "google/gemini-2.5-flash"
 
 # Maximum number of instances the orchestrator can spawn in one call.
 # The orchestrator decides how many to actually spawn (based on how many
@@ -80,4 +80,4 @@ summarizer_prompt: |
 
 # Model for the consolidator. Can be a cheaper/faster model since it only
 # reads and summarizes.
-summarizer_model: "google/gemini-2.0-flash"
+summarizer_model: "google/gemini-2.5-flash"
