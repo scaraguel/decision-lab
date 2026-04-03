@@ -124,6 +124,37 @@ Remaining are internal: `skill`, `codesearch`, `lsp` (default deny), `todoread`,
 
 Hardcoded (always set): `read`, `glob`, `grep`, `list` = allow; `question` = deny
 
+### Custom Tools (TypeScript)
+
+Custom tools in `opencode/tools/` **MUST** use `execute`, not `run`:
+
+```typescript
+import { tool } from "@opencode-ai/plugin"
+
+export default tool({
+  description: "What this tool does",
+  args: {
+    input: tool.schema.string().describe("Input description"),
+  },
+  async execute(args) {          // MUST be "execute", NOT "run"
+    // Use Bun shell for CLI commands (Python, bash, etc.)
+    const result = await Bun.$`python -c "print('hello')"`.nothrow()
+    const stdout = result.stdout.toString()
+    const stderr = result.stderr.toString()
+
+    if (result.exitCode !== 0) {
+      return `ERROR (exit code ${result.exitCode}):\n${stderr}`
+    }
+    return stdout.trim()
+  },
+})
+```
+
+**CRITICAL rules for custom tools:**
+- **MUST use `execute`**, not `run` — OpenCode calls `def.execute(args, ctx)` internally. Using `run` causes `def.execute is not a function` at runtime.
+- **Use `Bun.$\`...\`` for CLI commands** — tools run inside OpenCode's Bun runtime. Use `.nothrow()` to handle non-zero exit codes gracefully.
+- **Always check `result.exitCode`** — return errors as strings so the agent can diagnose issues.
+
 ### Modal Integration
 
 When `modal_integration=True`, generates:

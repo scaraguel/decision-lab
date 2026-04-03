@@ -10,6 +10,8 @@ import pytest
 import yaml
 
 from dlab.create_dpack import (
+    EXAMPLE_TOOL_TS,
+    RUN_ON_MODAL_TS,
     filter_models,
     generate_dpack,
     validate_dpack_name,
@@ -429,6 +431,46 @@ class TestSkeletonTools:
         content: str = tool_file.read_text()
         assert ".nothrow()" in content
         assert "exitCode" in content
+
+
+class TestToolTemplatesApi:
+    """Tests that tool templates use the correct OpenCode API."""
+
+    def test_example_tool_uses_execute_not_run(self) -> None:
+        """example-tool.ts MUST use execute(), not run().
+
+        OpenCode calls def.execute(args, ctx) on custom tools.
+        Using run() causes 'def.execute is not a function' at runtime.
+        """
+        assert "async execute(" in EXAMPLE_TOOL_TS, (
+            "EXAMPLE_TOOL_TS must use 'async execute(args)' — "
+            "OpenCode calls def.execute(), not def.run()"
+        )
+        assert "async run(" not in EXAMPLE_TOOL_TS, (
+            "EXAMPLE_TOOL_TS must NOT use 'async run()' — "
+            "this causes 'def.execute is not a function' at runtime"
+        )
+
+    def test_modal_tool_uses_execute_not_run(self) -> None:
+        """run-on-modal.ts MUST use execute(), not run()."""
+        assert "async execute(" in RUN_ON_MODAL_TS
+        assert "async run(" not in RUN_ON_MODAL_TS
+
+    def test_example_tool_uses_bun_shell(self) -> None:
+        """example-tool.ts should demonstrate Bun shell for CLI commands."""
+        assert "Bun.$" in EXAMPLE_TOOL_TS, (
+            "EXAMPLE_TOOL_TS should use Bun.$`...` for CLI commands"
+        )
+        assert ".nothrow()" in EXAMPLE_TOOL_TS, (
+            "EXAMPLE_TOOL_TS should use .nothrow() for error handling"
+        )
+
+    def test_generated_tool_uses_execute(self, tmp_path: Path) -> None:
+        """Generated example-tool.ts must use execute(), not run()."""
+        generate_dpack(tmp_path, {"name": "api-test", "skeletons": {"tools": True}})
+        content: str = (tmp_path / "api-test" / "opencode" / "tools" / "example-tool.ts").read_text()
+        assert "async execute(" in content
+        assert "async run(" not in content
 
 
 class TestSkeletonSkills:

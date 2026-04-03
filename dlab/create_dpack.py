@@ -884,8 +884,16 @@ export default tool({
   args: {
     input: tool.schema.string().describe("Input to process"),
   },
-  async run({ input }) {
-    return `Processed: ${input}`
+  async execute(args) {
+    // Run a CLI command with Bun shell (e.g. Python, bash, etc.)
+    const result = await Bun.$`echo "Processing: ${args.input}"`.nothrow()
+    const stdout = result.stdout.toString()
+    const stderr = result.stderr.toString()
+
+    if (result.exitCode !== 0) {
+      return `ERROR (exit code ${result.exitCode}):\\n${stderr}`
+    }
+    return stdout.trim()
   },
 })
 """
